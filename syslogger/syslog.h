@@ -23,6 +23,7 @@
 
 // Syslog data processing
 - (void)processSyslogData:(NSData *)data;
+- (ASLFormatter *)createFormatter;
 
 // Formatter configuration
 - (void)setFormatterStyle:(NSString *)style; // "compact", "verbose", "idevicesyslog", "default"
