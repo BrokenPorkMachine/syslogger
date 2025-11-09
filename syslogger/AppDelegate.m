@@ -8,6 +8,7 @@
 #import "AppDelegate.h"
 
 @interface AppDelegate ()
+@property (nonatomic, strong) NSButton *startStopButton;
 @property (nonatomic, strong) NSButton *clearButton;
 @property (nonatomic, strong) NSButton *saveButton;
 @property (nonatomic, strong) NSButton *pauseButton;
@@ -15,6 +16,7 @@
 @property (nonatomic, strong) NSSearchField *searchField;
 @property (nonatomic, strong) NSTextField *statusLabel;
 @property (nonatomic, assign) BOOL isPaused;
+@property (nonatomic, assign) BOOL isStreaming;
 @property (nonatomic, strong) NSMutableArray<NSString *> *pausedMessages;
 @property (nonatomic, assign) ASLLevel filterLevel;
 @property (nonatomic, strong) NSString *searchText;
@@ -32,6 +34,7 @@
 
     // Initialize filter settings
     self.isPaused = NO;
+    self.isStreaming = NO;
     self.pausedMessages = [NSMutableArray array];
     self.filterLevel = ASLLevelDebug; // Show all by default
     self.searchText = @"";
@@ -71,6 +74,7 @@
         self.deviceManager = [[DeviceManager alloc] init];
         self.deviceManager.delegate = self.logger;
         [self.deviceManager startSyslogStream];
+        self.isStreaming = YES;
 
         // Keep the console app running
         [[NSRunLoop currentRunLoop] run];
@@ -80,7 +84,9 @@
 
         self.deviceManager = [[DeviceManager alloc] init];
         self.deviceManager.delegate = self.logger;
-        [self.deviceManager startSyslogStream];
+
+        // Don't auto-start in GUI mode - user needs to press Start button
+        [self updateStatus:@"Ready. Press 'Start' to begin logging."];
     }
 }
 
@@ -346,6 +352,15 @@
     CGFloat x = 10;
     CGFloat y = 45;
 
+    // Start/Stop button (prominent green/red color)
+    self.startStopButton = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, 80, 25)];
+    [self.startStopButton setTitle:@"Start"];
+    [self.startStopButton setBezelStyle:NSBezelStyleRounded];
+    [self.startStopButton setTarget:self];
+    [self.startStopButton setAction:@selector(startStopButtonClicked:)];
+    [toolbar addSubview:self.startStopButton];
+    x += 90;
+
     // Clear button
     self.clearButton = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, 80, 25)];
     [self.clearButton setTitle:@"Clear"];
@@ -364,9 +379,9 @@
     [toolbar addSubview:self.pauseButton];
     x += 90;
 
-    // Save button
+    // Save/Export button
     self.saveButton = [[NSButton alloc] initWithFrame:NSMakeRect(x, y, 80, 25)];
-    [self.saveButton setTitle:@"Save..."];
+    [self.saveButton setTitle:@"Export..."];
     [self.saveButton setBezelStyle:NSBezelStyleRounded];
     [self.saveButton setTarget:self];
     [self.saveButton setAction:@selector(saveButtonClicked:)];
@@ -424,6 +439,22 @@
 
 #pragma mark - Button Actions
 
+- (void)startStopButtonClicked:(id)sender {
+    if (self.isStreaming) {
+        // Stop streaming
+        [self.deviceManager stopSyslogStream];
+        self.isStreaming = NO;
+        [self.startStopButton setTitle:@"Start"];
+        [self updateStatus:@"Logging stopped. Press 'Start' to resume."];
+    } else {
+        // Start streaming
+        [self.deviceManager startSyslogStream];
+        self.isStreaming = YES;
+        [self.startStopButton setTitle:@"Stop"];
+        [self updateStatus:@"Logging started. Waiting for device connection..."];
+    }
+}
+
 - (void)clearButtonClicked:(id)sender {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.textView setString:@""];
@@ -452,9 +483,15 @@
 }
 
 - (void)saveButtonClicked:(id)sender {
+    if (self.textView.string.length == 0) {
+        [self updateStatus:@"Nothing to export - log is empty"];
+        return;
+    }
+
     NSSavePanel *savePanel = [NSSavePanel savePanel];
-    [savePanel setNameFieldStringValue:@"syslog_output.txt"];
+    [savePanel setNameFieldStringValue:@"syslog_export.txt"];
     [savePanel setAllowedFileTypes:@[@"txt", @"log"]];
+    [savePanel setMessage:@"Export logs to file"];
 
     [savePanel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
         if (result == NSModalResponseOK) {
@@ -465,10 +502,11 @@
             [content writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&error];
 
             if (error) {
-                NSLog(@"Error saving file: %@", error);
-                [self updateStatus:[NSString stringWithFormat:@"Error saving: %@", error.localizedDescription]];
+                NSLog(@"Error exporting file: %@", error);
+                [self updateStatus:[NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]];
             } else {
-                [self updateStatus:[NSString stringWithFormat:@"Saved to: %@", url.path]];
+                NSUInteger lineCount = [[content componentsSeparatedByString:@"\n"] count];
+                [self updateStatus:[NSString stringWithFormat:@"Exported %lu lines to: %@", (unsigned long)lineCount, url.lastPathComponent]];
             }
         }
     }];
@@ -566,7 +604,13 @@
     // Update status with message count
     static NSInteger messageCount = 0;
     messageCount++;
-    if (messageCount % 10 == 0) {
+
+    // Show "device connected and logging" on first message
+    static BOOL firstMessage = YES;
+    if (firstMessage && self.isStreaming) {
+        [self updateStatus:@"Device connected - logging active"];
+        firstMessage = NO;
+    } else if (messageCount % 10 == 0) {
         [self updateStatus:[NSString stringWithFormat:@"Messages: %ld", (long)messageCount]];
     }
 }
