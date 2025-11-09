@@ -21,22 +21,16 @@
 @property (nonatomic, assign) BOOL saveToFile;
 @property (nonatomic, strong) NSString *outputFilePath;
 
-// Formatting options
-@property (nonatomic, strong) NSString *outputFormat;  // "standard", "compact", "verbose", "idevicesyslog"
-@property (nonatomic, assign) BOOL showTimestamp;
-@property (nonatomic, assign) BOOL showHost;
-@property (nonatomic, assign) BOOL showPID;
-@property (nonatomic, assign) BOOL showLevel;
-@property (nonatomic, assign) BOOL colorize;
-@property (nonatomic, assign) NSInteger maxMessageLength;
-
-// Filtering options
-@property (nonatomic, assign) ASLLevel minLogLevel;
-@property (nonatomic, strong) NSString *senderFilter;
-@property (nonatomic, strong) NSString *messageFilter;
-@property (nonatomic, assign) BOOL importantOnly;
-
+// Syslog data processing
 - (void)processSyslogData:(NSData *)data;
 - (ASLFormatter *)createFormatter;
+
+// Formatter configuration
+- (void)setFormatterStyle:(NSString *)style; // "compact", "verbose", "idevicesyslog", "default"
+- (void)setColorize:(BOOL)colorize;
+- (void)setShowTimestamp:(BOOL)show;
+- (void)setShowPID:(BOOL)show;
+- (void)setShowLevel:(BOOL)show;
+- (void)setMaxMessageLength:(NSInteger)length;
 
 @end
