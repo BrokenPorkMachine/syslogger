@@ -149,29 +149,41 @@ static void DeviceNotificationCallback(struct am_device_notification_info *info,
 
 - (void)connectToDeviceAndStartStream {
     if (!_device) {
-        NSLog(@"[DeviceManager] No device available");
+        NSLog(@"[DeviceManager] ERROR: No device available");
+        [self notifyError:@"No iOS device found. Please connect a device via USB."];
         return;
     }
 
     MobileDeviceManager *mdm = [MobileDeviceManager sharedManager];
+    if (!mdm || !mdm.frameworkLoaded) {
+        NSLog(@"[DeviceManager] ERROR: MobileDevice framework not loaded");
+        [self notifyError:@"Failed to load MobileDevice framework. This app requires macOS system frameworks."];
+        return;
+    }
 
     // Connect to device
     NSLog(@"[DeviceManager] Connecting to device...");
-    if (mdm.AMDeviceConnect(_device) != 0) {
-        NSLog(@"[DeviceManager] AMDeviceConnect failed");
+    int connectResult = mdm.AMDeviceConnect(_device);
+    if (connectResult != 0) {
+        NSLog(@"[DeviceManager] ERROR: AMDeviceConnect failed with code %d", connectResult);
+        [self notifyError:@"Failed to connect to device. Please check the USB connection."];
         return;
     }
 
     // Validate pairing
-    if (mdm.AMDeviceValidatePairing(_device) != 0) {
-        NSLog(@"[DeviceManager] AMDeviceValidatePairing failed - device may not be paired");
+    int pairingResult = mdm.AMDeviceValidatePairing(_device);
+    if (pairingResult != 0) {
+        NSLog(@"[DeviceManager] ERROR: AMDeviceValidatePairing failed with code %d", pairingResult);
+        [self notifyError:@"Device is not paired with this Mac. Please trust this computer on your iOS device."];
         mdm.AMDeviceDisconnect(_device);
         return;
     }
 
     // Start session
-    if (mdm.AMDeviceStartSession(_device) != 0) {
-        NSLog(@"[DeviceManager] AMDeviceStartSession failed");
+    int sessionResult = mdm.AMDeviceStartSession(_device);
+    if (sessionResult != 0) {
+        NSLog(@"[DeviceManager] ERROR: AMDeviceStartSession failed with code %d", sessionResult);
+        [self notifyError:@"Failed to start device session. Please reconnect the device."];
         mdm.AMDeviceDisconnect(_device);
         return;
     }
@@ -181,18 +193,35 @@ static void DeviceNotificationCallback(struct am_device_notification_info *info,
     int ret = mdm.AMDeviceSecureStartService(_device, CFSTR("com.apple.syslog_relay"), NULL, &_serviceConnection);
     if (ret == 0 && _serviceConnection != NULL) {
         _socket_fd = mdm.AMDServiceConnectionGetSocket(_serviceConnection);
-        NSLog(@"[DeviceManager] Syslog service started on socket %d", _socket_fd);
+        if (_socket_fd < 0) {
+            NSLog(@"[DeviceManager] ERROR: Invalid socket descriptor");
+            [self notifyError:@"Failed to establish connection socket."];
+            mdm.AMDeviceStopSession(_device);
+            mdm.AMDeviceDisconnect(_device);
+            return;
+        }
+
+        NSLog(@"[DeviceManager] ✓ Syslog service started successfully on socket %d", _socket_fd);
 
         // Set socket to non-blocking mode
-        fcntl(_socket_fd, F_SETFL, O_NONBLOCK);
+        int flags = fcntl(_socket_fd, F_GETFL, 0);
+        if (flags >= 0) {
+            fcntl(_socket_fd, F_SETFL, flags | O_NONBLOCK);
+        }
 
         // Start reading from socket using GCD
         [self startReadingFromSocket];
     } else {
-        NSLog(@"[DeviceManager] Failed to start syslog_relay service (error: %d)", ret);
+        NSLog(@"[DeviceManager] ERROR: Failed to start syslog_relay service (error: %d)", ret);
+        [self notifyError:[NSString stringWithFormat:@"Failed to start syslog service (error code: %d)", ret]];
         mdm.AMDeviceStopSession(_device);
         mdm.AMDeviceDisconnect(_device);
     }
+}
+
+- (void)notifyError:(NSString *)errorMessage {
+    NSLog(@"[DeviceManager] Notifying error: %@", errorMessage);
+    // Could add a delegate method here to notify the UI
 }
 
 - (void)startReadingFromSocket {

@@ -4,6 +4,9 @@
 //
 //  Created by failbr34k on 2025-11-09.
 //
+//  Main application controller for iOS Syslog Viewer.
+//  Handles UI creation, device management, log display, and user interactions.
+//
 
 #import "AppDelegate.h"
 
@@ -20,6 +23,9 @@
 @property (nonatomic, strong) NSMutableArray<NSString *> *pausedMessages;
 @property (nonatomic, assign) ASLLevel filterLevel;
 @property (nonatomic, strong) NSString *searchText;
+@property (nonatomic, assign) NSInteger messageCount;
+@property (nonatomic, assign) BOOL firstMessageReceived;
+@property (nonatomic, strong) NSView *connectionIndicator;
 @end
 
 @implementation AppDelegate
@@ -38,6 +44,8 @@
     self.pausedMessages = [NSMutableArray array];
     self.filterLevel = ASLLevelDebug; // Show all by default
     self.searchText = @"";
+    self.messageCount = 0;
+    self.firstMessageReceived = NO;
 
     // Handle file output arguments
     if ([args containsObject:@"--save-to-file"]) {
@@ -81,73 +89,14 @@
     } else {
         // GUI mode
         [self createProgrammaticUI];
+        [self setupMenuBar];
+        [self loadPreferences];
 
         self.deviceManager = [[DeviceManager alloc] init];
         self.deviceManager.delegate = self.logger;
 
         // Don't auto-start in GUI mode - user needs to press Start button
         [self updateStatus:@"Ready. Press 'Start' to begin logging."];
-    }
-}
-
-#pragma mark - CLI Argument Parsing
-
-- (void)parseCommandLineArguments:(NSArray<NSString *> *)args {
-    // Output options
-    if ([args containsObject:@"--save-to-file"]) {
-        self.logger.saveToFile = YES;
-    }
-
-    NSUInteger outputFileIndex = [args indexOfObject:@"--output-file"];
-    if (outputFileIndex != NSNotFound && outputFileIndex + 1 < args.count) {
-        self.logger.outputFilePath = args[outputFileIndex + 1];
-    }
-
-    NSUInteger formatIndex = [args indexOfObject:@"--format"];
-    if (formatIndex != NSNotFound && formatIndex + 1 < args.count) {
-        self.logger.outputFormat = args[formatIndex + 1];
-    }
-
-    // Display options
-    if ([args containsObject:@"--no-timestamp"]) {
-        self.logger.showTimestamp = NO;
-    }
-    if ([args containsObject:@"--no-host"]) {
-        self.logger.showHost = NO;
-    }
-    if ([args containsObject:@"--no-pid"]) {
-        self.logger.showPID = NO;
-    }
-    if ([args containsObject:@"--no-level"]) {
-        self.logger.showLevel = NO;
-    }
-    if ([args containsObject:@"--color"]) {
-        self.logger.colorize = YES;
-    }
-
-    NSUInteger maxLengthIndex = [args indexOfObject:@"--max-length"];
-    if (maxLengthIndex != NSNotFound && maxLengthIndex + 1 < args.count) {
-        self.logger.maxMessageLength = [args[maxLengthIndex + 1] integerValue];
-    }
-
-    // Filtering options
-    NSUInteger minLevelIndex = [args indexOfObject:@"--min-level"];
-    if (minLevelIndex != NSNotFound && minLevelIndex + 1 < args.count) {
-        self.logger.minLogLevel = [ASLMessage levelFromString:args[minLevelIndex + 1]];
-    }
-
-    NSUInteger senderIndex = [args indexOfObject:@"--sender"];
-    if (senderIndex != NSNotFound && senderIndex + 1 < args.count) {
-        self.logger.senderFilter = args[senderIndex + 1];
-    }
-
-    NSUInteger messageIndex = [args indexOfObject:@"--message"];
-    if (messageIndex != NSNotFound && messageIndex + 1 < args.count) {
-        self.logger.messageFilter = args[messageIndex + 1];
-    }
-
-    if ([args containsObject:@"--important-only"]) {
-        self.logger.importantOnly = YES;
     }
 }
 
@@ -160,152 +109,8 @@
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     [self.window center];
-    [self.window setTitle:@"Syslog Viewer"];
-
-    // Create container view
-    NSView *contentView = self.window.contentView;
-
-    // Create toolbar/controls area
-    NSView *controlsView = [[NSView alloc] initWithFrame:NSMakeRect(0, 620, 1000, 80)];
-    [contentView addSubview:controlsView];
-
-    CGFloat xPos = 10;
-    CGFloat yPos = 45;
-
-    // Format label and popup
-    NSTextField *formatLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(xPos, yPos, 60, 24)];
-    formatLabel.stringValue = @"Format:";
-    formatLabel.editable = NO;
-    formatLabel.bordered = NO;
-    formatLabel.backgroundColor = [NSColor clearColor];
-    [controlsView addSubview:formatLabel];
-    xPos += 65;
-
-    self.formatPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 150, 24)];
-    [self.formatPopup addItemsWithTitles:@[@"idevicesyslog", @"standard", @"compact", @"verbose"]];
-    [self.formatPopup setTarget:self];
-    [self.formatPopup setAction:@selector(formatChanged:)];
-    [controlsView addSubview:self.formatPopup];
-    xPos += 160;
-
-    // Level label and popup
-    NSTextField *levelLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(xPos, yPos, 70, 24)];
-    levelLabel.stringValue = @"Min Level:";
-    levelLabel.editable = NO;
-    levelLabel.bordered = NO;
-    levelLabel.backgroundColor = [NSColor clearColor];
-    [controlsView addSubview:levelLabel];
-    xPos += 75;
-
-    self.levelPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 120, 24)];
-    [self.levelPopup addItemsWithTitles:@[@"Debug", @"Info", @"Notice", @"Warning", @"Error", @"Critical", @"Alert", @"Emergency"]];
-    [self.levelPopup setTarget:self];
-    [self.levelPopup setAction:@selector(levelChanged:)];
-    [controlsView addSubview:self.levelPopup];
-    xPos += 130;
-
-    // Important only checkbox
-    self.importantOnlyCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 140, 24)];
-    [self.importantOnlyCheckbox setButtonType:NSButtonTypeSwitch];
-    self.importantOnlyCheckbox.title = @"Important Only";
-    [self.importantOnlyCheckbox setTarget:self];
-    [self.importantOnlyCheckbox setAction:@selector(importantOnlyChanged:)];
-    [controlsView addSubview:self.importantOnlyCheckbox];
-    xPos += 150;
-
-    // Clear button
-    self.clearButton = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 80, 24)];
-    self.clearButton.title = @"Clear";
-    [self.clearButton setBezelStyle:NSBezelStyleRounded];
-    [self.clearButton setTarget:self];
-    [self.clearButton setAction:@selector(clearLog:)];
-    [controlsView addSubview:self.clearButton];
-    xPos += 90;
-
-    // Save button
-    self.saveButton = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 80, 24)];
-    self.saveButton.title = @"Save...";
-    [self.saveButton setBezelStyle:NSBezelStyleRounded];
-    [self.saveButton setTarget:self];
-    [self.saveButton setAction:@selector(saveLog:)];
-    [controlsView addSubview:self.saveButton];
-
-    // Second row of controls
-    xPos = 10;
-    yPos = 15;
-
-    // Display options checkboxes
-    self.timestampCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 110, 24)];
-    [self.timestampCheckbox setButtonType:NSButtonTypeSwitch];
-    self.timestampCheckbox.title = @"Timestamp";
-    self.timestampCheckbox.state = self.logger.showTimestamp ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.timestampCheckbox setTarget:self];
-    [self.timestampCheckbox setAction:@selector(displayOptionsChanged:)];
-    [controlsView addSubview:self.timestampCheckbox];
-    xPos += 115;
-
-    self.hostCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 70, 24)];
-    [self.hostCheckbox setButtonType:NSButtonTypeSwitch];
-    self.hostCheckbox.title = @"Host";
-    self.hostCheckbox.state = self.logger.showHost ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.hostCheckbox setTarget:self];
-    [self.hostCheckbox setAction:@selector(displayOptionsChanged:)];
-    [controlsView addSubview:self.hostCheckbox];
-    xPos += 75;
-
-    self.pidCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 60, 24)];
-    [self.pidCheckbox setButtonType:NSButtonTypeSwitch];
-    self.pidCheckbox.title = @"PID";
-    self.pidCheckbox.state = self.logger.showPID ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.pidCheckbox setTarget:self];
-    [self.pidCheckbox setAction:@selector(displayOptionsChanged:)];
-    [controlsView addSubview:self.pidCheckbox];
-    xPos += 65;
-
-    self.levelCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(xPos, yPos, 70, 24)];
-    [self.levelCheckbox setButtonType:NSButtonTypeSwitch];
-    self.levelCheckbox.title = @"Level";
-    self.levelCheckbox.state = self.logger.showLevel ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.levelCheckbox setTarget:self];
-    [self.levelCheckbox setAction:@selector(displayOptionsChanged:)];
-    [controlsView addSubview:self.levelCheckbox];
-    xPos += 80;
-
-    // Sender filter
-    NSTextField *senderLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(xPos, yPos, 60, 24)];
-    senderLabel.stringValue = @"Sender:";
-    senderLabel.editable = NO;
-    senderLabel.bordered = NO;
-    senderLabel.backgroundColor = [NSColor clearColor];
-    [controlsView addSubview:senderLabel];
-    xPos += 65;
-
-    self.senderField = [[NSTextField alloc] initWithFrame:NSMakeRect(xPos, yPos, 150, 24)];
-    self.senderField.placeholderString = @"Filter by sender...";
-    [self.senderField setTarget:self];
-    [self.senderField setAction:@selector(filterChanged:)];
-    [controlsView addSubview:self.senderField];
-    xPos += 160;
-
-    // Message filter
-    NSTextField *messageLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(xPos, yPos, 70, 24)];
-    messageLabel.stringValue = @"Message:";
-    messageLabel.editable = NO;
-    messageLabel.bordered = NO;
-    messageLabel.backgroundColor = [NSColor clearColor];
-    [controlsView addSubview:messageLabel];
-    xPos += 75;
-
-    self.messageField = [[NSTextField alloc] initWithFrame:NSMakeRect(xPos, yPos, 150, 24)];
-    self.messageField.placeholderString = @"Filter by message...";
-    [self.messageField setTarget:self];
-    [self.messageField setAction:@selector(filterChanged:)];
-    [controlsView addSubview:self.messageField];
-
-    // Create scroll view for text
-    self.scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 1000, 620)];
     [self.window setTitle:@"iOS Syslog Viewer"];
-    [self.window setMinSize:NSMakeSize(600, 400)];
+    [self.window setMinSize:NSMakeSize(800, 500)];
 
     // Create main content view
     NSView *contentView = self.window.contentView;
@@ -341,6 +146,130 @@
                               contentView.bounds.size.width, toolbarHeight);
 
     [self.window makeKeyAndOrderFront:nil];
+}
+
+- (void)setupMenuBar {
+    NSMenu *mainMenu = [[NSMenu alloc] init];
+
+    // App menu
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *appMenu = [[NSMenu alloc] init];
+
+    [appMenu addItemWithTitle:@"About Syslog Viewer"
+                       action:@selector(showAboutPanel)
+                keyEquivalent:@""];
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    [appMenu addItemWithTitle:@"Preferences..."
+                       action:nil
+                keyEquivalent:@","];
+
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    [appMenu addItemWithTitle:@"Quit Syslog Viewer"
+                       action:@selector(terminate:)
+                keyEquivalent:@"q"];
+
+    [appMenuItem setSubmenu:appMenu];
+    [mainMenu addItem:appMenuItem];
+
+    // File menu
+    NSMenuItem *fileMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+
+    NSMenuItem *exportItem = [fileMenu addItemWithTitle:@"Export..."
+                                                 action:@selector(saveButtonClicked:)
+                                          keyEquivalent:@"s"];
+    [exportItem setTarget:self];
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *clearItem = [fileMenu addItemWithTitle:@"Clear Log"
+                                                action:@selector(clearButtonClicked:)
+                                         keyEquivalent:@"k"];
+    [clearItem setTarget:self];
+
+    [fileMenuItem setSubmenu:fileMenu];
+    [mainMenu addItem:fileMenuItem];
+
+    // Edit menu (for copy/paste support)
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+
+    [editMenu addItemWithTitle:@"Copy"
+                        action:@selector(copy:)
+                 keyEquivalent:@"c"];
+
+    [editMenu addItemWithTitle:@"Select All"
+                        action:@selector(selectAll:)
+                 keyEquivalent:@"a"];
+
+    [editMenuItem setSubmenu:editMenu];
+    [mainMenu addItem:editMenuItem];
+
+    // View menu
+    NSMenuItem *viewMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:@"View"];
+
+    NSMenuItem *startStopItem = [viewMenu addItemWithTitle:@"Start/Stop Logging"
+                                                    action:@selector(startStopButtonClicked:)
+                                             keyEquivalent:@"l"];
+    [startStopItem setTarget:self];
+
+    NSMenuItem *pauseItem = [viewMenu addItemWithTitle:@"Pause/Resume"
+                                                action:@selector(pauseButtonClicked:)
+                                         keyEquivalent:@"p"];
+    [pauseItem setTarget:self];
+
+    [viewMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *filterItem = [viewMenu addItemWithTitle:@"Focus Filter Field"
+                                                 action:@selector(focusSearchField:)
+                                          keyEquivalent:@"f"];
+    [filterItem setTarget:self];
+
+    [viewMenuItem setSubmenu:viewMenu];
+    [mainMenu addItem:viewMenuItem];
+
+    // Window menu
+    NSMenuItem *windowMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+
+    [windowMenu addItemWithTitle:@"Minimize"
+                          action:@selector(performMiniaturize:)
+                   keyEquivalent:@"m"];
+
+    [windowMenu addItemWithTitle:@"Zoom"
+                          action:@selector(performZoom:)
+                   keyEquivalent:@""];
+
+    [windowMenuItem setSubmenu:windowMenu];
+    [mainMenu addItem:windowMenuItem];
+
+    // Help menu
+    NSMenuItem *helpMenuItem = [[NSMenuItem alloc] init];
+    NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:@"Help"];
+
+    [helpMenu addItemWithTitle:@"Syslog Viewer Help"
+                        action:@selector(showHelp:)
+                 keyEquivalent:@"?"];
+
+    [helpMenuItem setSubmenu:helpMenu];
+    [mainMenu addItem:helpMenuItem];
+
+    [NSApp setMainMenu:mainMenu];
+}
+
+- (void)focusSearchField:(id)sender {
+    if (self.searchField) {
+        [self.window makeFirstResponder:self.searchField];
+    }
+}
+
+- (void)showHelp:(id)sender {
+    [self showAlertWithTitle:@"Syslog Viewer Help"
+                     message:@"Keyboard Shortcuts:\n\n⌘L - Start/Stop Logging\n⌘P - Pause/Resume\n⌘K - Clear Log\n⌘S - Export Log\n⌘F - Focus Filter Field\n⌘A - Select All\n⌘C - Copy\n⌘Q - Quit\n\nTip: Use the filter field at the top to search through logs in real-time!"];
 }
 
 - (NSView *)createToolbar {
@@ -422,9 +351,16 @@
     [self.searchField setAction:@selector(searchFieldChanged:)];
     [toolbar addSubview:self.searchField];
 
+    // Connection status indicator (visual dot)
+    self.connectionIndicator = [[NSView alloc] initWithFrame:NSMakeRect(x + 215, y + 8, 10, 10)];
+    self.connectionIndicator.wantsLayer = YES;
+    self.connectionIndicator.layer.cornerRadius = 5;
+    self.connectionIndicator.layer.backgroundColor = [[NSColor grayColor] CGColor];
+    [toolbar addSubview:self.connectionIndicator];
+
     // Status label (bottom row)
     self.statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(10, 10, 980, 20)];
-    [self.statusLabel setStringValue:@"Waiting for device..."];
+    [self.statusLabel setStringValue:@"Ready"];
     [self.statusLabel setBezeled:NO];
     [self.statusLabel setDrawsBackground:NO];
     [self.statusLabel setEditable:NO];
@@ -435,6 +371,22 @@
     [toolbar addSubview:self.statusLabel];
 
     return toolbar;
+}
+
+- (void)updateConnectionIndicator:(NSString *)status {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!self.connectionIndicator) return;
+
+        if ([status containsString:@"connected"] || [status containsString:@"active"]) {
+            self.connectionIndicator.layer.backgroundColor = [[NSColor colorWithRed:0.2 green:0.8 blue:0.2 alpha:1.0] CGColor];
+        } else if ([status containsString:@"started"] || [status containsString:@"Logging"]) {
+            self.connectionIndicator.layer.backgroundColor = [[NSColor colorWithRed:1.0 green:0.7 blue:0.0 alpha:1.0] CGColor];
+        } else if ([status containsString:@"stopped"] || [status containsString:@"cleared"]) {
+            self.connectionIndicator.layer.backgroundColor = [[NSColor redColor] CGColor];
+        } else {
+            self.connectionIndicator.layer.backgroundColor = [[NSColor grayColor] CGColor];
+        }
+    });
 }
 
 #pragma mark - Button Actions
@@ -458,6 +410,9 @@
 - (void)clearButtonClicked:(id)sender {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.textView setString:@""];
+        self.messageCount = 0;
+        self.firstMessageReceived = NO;
+        [self.pausedMessages removeAllObjects];
         [self updateStatus:@"Log cleared"];
     });
 }
@@ -483,33 +438,64 @@
 }
 
 - (void)saveButtonClicked:(id)sender {
-    if (self.textView.string.length == 0) {
+    if (!self.textView || self.textView.string.length == 0) {
+        [self showAlertWithTitle:@"Nothing to Export" message:@"The log is empty. Start logging to capture device output."];
         [self updateStatus:@"Nothing to export - log is empty"];
         return;
     }
 
     NSSavePanel *savePanel = [NSSavePanel savePanel];
-    [savePanel setNameFieldStringValue:@"syslog_export.txt"];
+    [savePanel setNameFieldStringValue:[NSString stringWithFormat:@"syslog_export_%@.txt", [self currentTimestampString]]];
     [savePanel setAllowedFileTypes:@[@"txt", @"log"]];
     [savePanel setMessage:@"Export logs to file"];
+    [savePanel setPrompt:@"Export"];
 
     [savePanel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse result) {
         if (result == NSModalResponseOK) {
             NSURL *url = [savePanel URL];
+            if (!url) {
+                [self showAlertWithTitle:@"Export Failed" message:@"Invalid file path selected."];
+                return;
+            }
+
             NSString *content = self.textView.string;
             NSError *error = nil;
 
-            [content writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&error];
+            BOOL success = [content writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&error];
 
-            if (error) {
-                NSLog(@"Error exporting file: %@", error);
+            if (!success || error) {
+                NSLog(@"[AppDelegate] Error exporting file: %@", error);
+                [self showAlertWithTitle:@"Export Failed"
+                                 message:[NSString stringWithFormat:@"Failed to save file: %@", error.localizedDescription]];
                 [self updateStatus:[NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]];
             } else {
                 NSUInteger lineCount = [[content componentsSeparatedByString:@"\n"] count];
-                [self updateStatus:[NSString stringWithFormat:@"Exported %lu lines to: %@", (unsigned long)lineCount, url.lastPathComponent]];
+                [self updateStatus:[NSString stringWithFormat:@"✓ Exported %lu lines to: %@", (unsigned long)lineCount, url.lastPathComponent]];
             }
         }
     }];
+}
+
+- (NSString *)currentTimestampString {
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    [formatter setDateFormat:@"yyyy-MM-dd_HH-mm-ss"];
+    return [formatter stringFromDate:[NSDate date]];
+}
+
+- (void)showAlertWithTitle:(NSString *)title message:(NSString *)message {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setMessageText:title];
+        [alert setInformativeText:message];
+        [alert setAlertStyle:NSAlertStyleWarning];
+        [alert addButtonWithTitle:@"OK"];
+
+        if (self.window) {
+            [alert beginSheetModalForWindow:self.window completionHandler:nil];
+        } else {
+            [alert runModal];
+        }
+    });
 }
 
 - (void)filterLevelChanged:(id)sender {
@@ -518,9 +504,16 @@
 }
 
 - (void)searchFieldChanged:(id)sender {
-    self.searchText = [self.searchField stringValue];
+    // Input validation: Sanitize search text
+    NSString *rawText = [self.searchField stringValue];
+
+    // Trim whitespace and limit length for performance
+    self.searchText = [[rawText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
+                       substringToIndex:MIN(rawText.length, 500)];
+
     if (self.searchText.length > 0) {
-        [self updateStatus:[NSString stringWithFormat:@"Filtering: %@", self.searchText]];
+        [self updateStatus:[NSString stringWithFormat:@"Filtering: %@",
+                           self.searchText.length > 50 ? [[self.searchText substringToIndex:50] stringByAppendingString:@"..."] : self.searchText]];
     } else {
         [self updateStatus:@"Ready"];
     }
@@ -529,6 +522,7 @@
 - (void)updateStatus:(NSString *)status {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self.statusLabel setStringValue:status];
+        [self updateConnectionIndicator:status];
     });
 }
 
@@ -602,16 +596,14 @@
     [self.textView scrollRangeToVisible:NSMakeRange(self.textView.string.length, 0)];
 
     // Update status with message count
-    static NSInteger messageCount = 0;
-    messageCount++;
+    self.messageCount++;
 
     // Show "device connected and logging" on first message
-    static BOOL firstMessage = YES;
-    if (firstMessage && self.isStreaming) {
+    if (!self.firstMessageReceived && self.isStreaming) {
         [self updateStatus:@"Device connected - logging active"];
-        firstMessage = NO;
-    } else if (messageCount % 10 == 0) {
-        [self updateStatus:[NSString stringWithFormat:@"Messages: %ld", (long)messageCount]];
+        self.firstMessageReceived = YES;
+    } else if (self.messageCount % 10 == 0) {
+        [self updateStatus:[NSString stringWithFormat:@"Messages: %ld", (long)self.messageCount]];
     }
 }
 
@@ -641,7 +633,10 @@
 #pragma mark - Application Lifecycle
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification {
-    [self.deviceManager stopSyslogStream];
+    if (self.deviceManager) {
+        [self.deviceManager stopSyslogStream];
+    }
+    [self savePreferences];
 }
 
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app {
@@ -650,6 +645,60 @@
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
     return YES;
+}
+
+#pragma mark - Menu Actions
+
+- (void)showAboutPanel {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSAlert *alert = [[NSAlert alloc] init];
+        [alert setMessageText:@"iOS Syslog Viewer"];
+        [alert setInformativeText:@"Version 1.0.0\n\nA professional macOS application for viewing iOS device system logs in real-time.\n\nFeatures:\n• Real-time log streaming\n• Multiple output formats\n• Advanced filtering\n• Color-coded log levels\n• Export functionality\n\n© 2025 Syslogger"];
+        [alert setAlertStyle:NSAlertStyleInformational];
+        [alert addButtonWithTitle:@"OK"];
+
+        if (self.window) {
+            [alert beginSheetModalForWindow:self.window completionHandler:nil];
+        } else {
+            [alert runModal];
+        }
+    });
+}
+
+#pragma mark - Preferences
+
+- (void)loadPreferences {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    // Load filter level
+    if ([defaults objectForKey:@"filterLevel"]) {
+        self.filterLevel = [defaults integerForKey:@"filterLevel"];
+        if (self.filterLevelButton) {
+            [self.filterLevelButton selectItemAtIndex:self.filterLevel];
+        }
+    }
+
+    // Load window position and size
+    if ([defaults objectForKey:@"windowFrame"]) {
+        NSString *frameString = [defaults stringForKey:@"windowFrame"];
+        NSRect frame = NSRectFromString(frameString);
+        [self.window setFrame:frame display:YES];
+    }
+}
+
+- (void)savePreferences {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    // Save filter level
+    [defaults setInteger:self.filterLevel forKey:@"filterLevel"];
+
+    // Save window position and size
+    if (self.window) {
+        NSString *frameString = NSStringFromRect(self.window.frame);
+        [defaults setObject:frameString forKey:@"windowFrame"];
+    }
+
+    [defaults synchronize];
 }
 
 @end
