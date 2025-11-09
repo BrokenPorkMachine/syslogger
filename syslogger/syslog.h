@@ -21,6 +21,15 @@
 @property (nonatomic, assign) BOOL saveToFile;
 @property (nonatomic, strong) NSString *outputFilePath;
 
+// Syslog data processing
 - (void)processSyslogData:(NSData *)data;
+
+// Formatter configuration
+- (void)setFormatterStyle:(NSString *)style; // "compact", "verbose", "idevicesyslog", "default"
+- (void)setColorize:(BOOL)colorize;
+- (void)setShowTimestamp:(BOOL)show;
+- (void)setShowPID:(BOOL)show;
+- (void)setShowLevel:(BOOL)show;
+- (void)setMaxMessageLength:(NSInteger)length;
 
 @end
