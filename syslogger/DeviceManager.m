@@ -257,16 +257,15 @@ static void DeviceNotificationCallback(struct am_device_notification_info *info,
     char buffer[8192];
     ssize_t bytesRead;
 
+    // Read all available data from the socket
     while ((bytesRead = recv(_socket_fd, buffer, sizeof(buffer), 0)) > 0) {
-        NSData *data = [NSData dataWithBytes:buffer length:bytesRead];
-
-        // Send to delegate
-        if (self.delegate && [self.delegate respondsToSelector:@selector(didReceiveSyslogData:)]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.delegate didReceiveSyslogData:data];
-            });
+        @synchronized(_receiveBuffer) {
+            [_receiveBuffer appendBytes:buffer length:bytesRead];
         }
     }
+
+    // Process the buffered data to find complete messages
+    [self processReceiveBuffer];
 
     if (bytesRead == 0) {
         // Connection closed
@@ -280,6 +279,40 @@ static void DeviceNotificationCallback(struct am_device_notification_info *info,
         dispatch_async(_syslogQueue, ^{
             [self cleanupDeviceConnection];
         });
+    }
+}
+
+- (void)processReceiveBuffer {
+    @synchronized(_receiveBuffer) {
+        if (_receiveBuffer.length == 0) {
+            return;
+        }
+
+        const char *bytes = _receiveBuffer.bytes;
+        NSUInteger length = _receiveBuffer.length;
+        NSUInteger offset = 0;
+
+        // Look for newline characters to delimit messages
+        for (NSUInteger i = 0; i < length; i++) {
+            if (bytes[i] == '\0' || bytes[i] == '\n') {
+                // Found a complete message
+                NSData *messageData = [_receiveBuffer subdataWithRange:NSMakeRange(offset, i - offset)];
+
+                if (messageData.length > 0) {
+                    if (self.delegate && [self.delegate respondsToSelector:@selector(didReceiveSyslogData:)]) {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            [self.delegate didReceiveSyslogData:messageData];
+                        });
+                    }
+                }
+                offset = i + 1;
+            }
+        }
+
+        // Remove processed messages from the buffer
+        if (offset > 0) {
+            [_receiveBuffer replaceBytesInRange:NSMakeRange(0, offset) withBytes:NULL length:0];
+        }
     }
 }
 
