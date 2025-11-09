@@ -13,16 +13,23 @@ A powerful macOS application for viewing iOS device system logs with full Apple 
 
 ### GUI Features
 - **Color-coded Log Levels**: Visual differentiation of Emergency, Alert, Critical, Error, Warning, Notice, Info, and Debug messages
+- **Connection Indicator**: Visual status dot showing device connection state (gray/yellow/green/red)
 - **Filtering**:
   - Filter by minimum log level
   - Search/filter by text content
+  - Input validation and sanitization
 - **Controls**:
-  - Pause/Resume logging
+  - Start/Stop logging with visual feedback
+  - Pause/Resume logging with message buffering
   - Clear log display
-  - Save to file
+  - Export to file with automatic timestamps
+- **Keyboard Shortcuts**: Full keyboard navigation support
+- **Persistent Preferences**: Window position and settings saved between sessions
+- **About Panel**: Version information and feature list
 - **Dark Theme**: Easy-on-the-eyes dark interface with syntax-highlighted logs
 - **Auto-scroll**: Automatically follows new log entries
 - **Status Bar**: Real-time message count and device status
+- **Menu Bar**: Complete menu system with standard macOS integration
 
 ### CLI Features
 - **Headless Operation**: Run without GUI using `--console` flag
@@ -64,11 +71,22 @@ Simply launch the application:
 Or double-click the app bundle.
 
 **GUI Controls**:
+- **Start/Stop**: Begin or stop log streaming
 - **Clear**: Clear the log display
 - **Pause/Resume**: Pause log streaming (messages are buffered)
-- **Save**: Export current logs to a file
+- **Export**: Export current logs to a timestamped file
 - **Min Level**: Filter by minimum log level (Emergency → Debug)
-- **Search**: Filter messages by text content
+- **Search**: Filter messages by text content (real-time)
+
+**Keyboard Shortcuts**:
+- **⌘L**: Start/Stop Logging
+- **⌘P**: Pause/Resume
+- **⌘K**: Clear Log
+- **⌘S**: Export Log
+- **⌘F**: Focus Filter Field
+- **⌘A**: Select All
+- **⌘C**: Copy
+- **⌘Q**: Quit
 
 ### Command-Line Mode
 
@@ -139,10 +157,14 @@ Processes raw syslog data:
 
 #### AppDelegate (`AppDelegate.h/.m`)
 Main application controller:
-- GUI creation and management
-- User interaction handling
-- Message filtering and display
+- GUI creation and management with full menu bar integration
+- User interaction handling with keyboard shortcuts
+- Message filtering and display with input validation
+- Connection status indicator with visual feedback
+- Preferences persistence using NSUserDefaults
+- About panel and help system
 - Both GUI and CLI mode support
+- Comprehensive error handling and user feedback
 
 ### Data Flow
 
@@ -235,6 +257,24 @@ This application provides similar functionality to libimobiledevice's `idevicesy
 - Default format matches idevicesyslog output
 - Can be used as drop-in replacement in scripts
 - Same underlying syslog_relay service
+
+## Version History
+
+### 1.0.0 (2025-11-09)
+**Production Release with Polish**
+- Complete GUI with Start/Stop controls
+- Keyboard shortcuts for all major actions
+- Persistent preferences (window position, filter settings)
+- About window with version information
+- Connection status indicator (visual dot)
+- Improved error handling and user feedback
+- Input validation and sanitization
+- Timestamped export filenames
+- Menu bar with standard macOS integration
+- Help system with shortcut reference
+- Comprehensive documentation and comments
+- Fixed static variable issues
+- Removed dead code and cleaned up properties
 
 ## License
 

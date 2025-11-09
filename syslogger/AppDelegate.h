@@ -9,6 +9,23 @@
 #import "syslog.h"
 #import "DeviceManager.h"
 
+/**
+ * AppDelegate - Main application controller
+ *
+ * Manages the iOS Syslog Viewer application lifecycle, UI, and device communication.
+ * Supports both GUI and console modes with real-time log streaming and filtering.
+ *
+ * Features:
+ * - Real-time syslog streaming from iOS devices via USB
+ * - Advanced filtering by log level, sender, and message content
+ * - Color-coded log display with multiple format options
+ * - Export functionality with timestamped filenames
+ * - Pause/Resume with message buffering
+ * - Keyboard shortcuts for common actions
+ * - Persistent preferences
+ *
+ * @version 1.0.0
+ */
 @interface AppDelegate : NSObject <NSApplicationDelegate, SysloggerOutput>
 
 @property (strong, nonatomic) NSWindow *window;
@@ -16,19 +33,6 @@
 @property (strong, nonatomic) NSTextView *textView;
 @property (strong, nonatomic) syslogger *logger;
 @property (strong, nonatomic) DeviceManager *deviceManager;
-
-// UI Controls
-@property (strong, nonatomic) NSPopUpButton *formatPopup;
-@property (strong, nonatomic) NSPopUpButton *levelPopup;
-@property (strong, nonatomic) NSButton *timestampCheckbox;
-@property (strong, nonatomic) NSButton *hostCheckbox;
-@property (strong, nonatomic) NSButton *pidCheckbox;
-@property (strong, nonatomic) NSButton *levelCheckbox;
-@property (strong, nonatomic) NSButton *importantOnlyCheckbox;
-@property (strong, nonatomic) NSTextField *senderField;
-@property (strong, nonatomic) NSTextField *messageField;
-@property (strong, nonatomic) NSButton *clearButton;
-@property (strong, nonatomic) NSButton *saveButton;
 
 @end
 
